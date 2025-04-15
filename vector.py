@@ -83,16 +83,15 @@ class Vec3:
 
     def rotate_z(self, angle: float):
         old_x = self.x
-        self.x = old_x * math.cos(angle) - self.y * math.sin(angle)
-        self.y = old_x * math.sin(angle) + self.y * math.cos(angle)
+        old_y = self.y
+        self.x = old_x * math.cos(angle) - old_y * math.sin(angle)
+        self.y = old_x * math.sin(angle) + old_y * math.cos(angle)
 
     def rotate_y(self, angle: float):
         old_x = self.x
         old_z = self.z
         self.x = old_x * math.cos(angle) + old_z * math.sin(angle)
         self.z = -old_x * math.sin(angle) + old_z * math.cos(angle)
-
-
 
 class Vec4:
     def __init__(self, x: float = 0, y: float = 0, z: float = 0, w: float = 0):
@@ -123,3 +122,6 @@ class Vec4:
 
     def __str__(self):
         return f"({self.x}, {self.y}, {self.z}, {self.w})"
+
+def dot(self, other):
+    return self.x * other.x + self.y * other.y + self.z * other.z
