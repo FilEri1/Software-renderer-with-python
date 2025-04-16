@@ -4,9 +4,11 @@ import ctypes
 # Moduler:
 
 # Egna filer:
-from input import process_input
+from input import *
 from render import  *
 from window import *
+
+from camera import *
 
 class App:
     def __init__(self, window_width, window_height):
@@ -16,6 +18,9 @@ class App:
         self.last_time = sdl2.SDL_GetTicks()
         self.target_delta = 1000 // 60
 
+        # Kamera:
+        self.camera = Camera(Vec3(0, 0, 10), Vec3(0, 0,0 ))
+
     def run(self):
         while self.running:
             # Input: -------------------------------------------
@@ -24,20 +29,18 @@ class App:
             delta_time = current_time - self.last_time
 
             self.running = process_input(self.window, self.renderer)
-
+            player_keys = get_player_keys()
             #---------------------------------------------------
 
             # Render: ------------------------------------------
-
-            self.renderer.render()
-
+            self.renderer.render(self.camera.position, self.camera.rotation)
             # --------------------------------------------------
 
             # Update: ------------------------------------------
+            if delta_time >= self.target_delta:
+                self.last_time = current_time
 
-            # if delta_time >= self.target_delta:
-            #     self.update() TODO!
-            #     self.last_time = current_time
+                self.camera.update_camera(player_keys, delta_time)
 
             # --------------------------------------------------
 

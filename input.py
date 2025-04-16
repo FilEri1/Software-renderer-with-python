@@ -4,6 +4,8 @@ import ctypes
 from window import Window
 from render import Renderer
 
+player_input_keys = [False, False, False, False, False, False] # Håller WASD för spelaren
+
 event = sdl2.SDL_Event()
 
 def process_input(window: Window, renderer: Renderer) -> bool:
@@ -21,7 +23,38 @@ def process_input(window: Window, renderer: Renderer) -> bool:
                 renderer.resize_buffer(window.window_width, window.window_height)
 
         if event.type == sdl2.SDL_KEYDOWN:
-            if event.key.keysym.sym == sdl2.SDLK_ESCAPE:
+            if event.key.keysym.sym == sdl2.SDLK_ESCAPE: # Stänger spelet om vi tryker på ESCAPE
                 return False
+            # WASD:
+            if event.key.keysym.sym == sdl2.SDLK_w:
+                player_input_keys[0] = True
+            elif event.key.keysym.sym == sdl2.SDLK_a:
+                player_input_keys[1] = True
+            elif event.key.keysym.sym == sdl2.SDLK_s:
+                player_input_keys[2] = True
+            elif event.key.keysym.sym == sdl2.SDLK_d:
+                player_input_keys[3] = True
+            elif event.key.keysym.sym == sdl2.SDLK_SPACE:
+                player_input_keys[4] = True
+            elif event.key.keysym.sym == sdl2.SDLK_z:
+                player_input_keys[5] = True
+
+        if event.type == sdl2.SDL_KEYUP:
+            # WASD vi sätter keys = False när vi släpper en knapp!
+            if event.key.keysym.sym == sdl2.SDLK_w:
+                player_input_keys[0] = False
+            elif event.key.keysym.sym == sdl2.SDLK_a:
+                player_input_keys[1] = False
+            elif event.key.keysym.sym == sdl2.SDLK_s:
+                player_input_keys[2] = False
+            elif event.key.keysym.sym == sdl2.SDLK_d:
+                player_input_keys[3] = False
+            elif event.key.keysym.sym == sdl2.SDLK_SPACE:
+                player_input_keys[4] = False
+            elif event.key.keysym.sym == sdl2.SDLK_z:
+                player_input_keys[5] = False
 
     return True
+
+def get_player_keys():
+    return player_input_keys

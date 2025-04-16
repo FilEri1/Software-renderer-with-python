@@ -9,6 +9,7 @@ from window import Window
 from vector import *
 from graphics import *
 from matrix import *
+from camera import *
 
 class Renderer:
     def __init__(self, window: Window):
@@ -35,8 +36,6 @@ class Renderer:
         )
         if not self.buffer_texture:
             raise RuntimeError(f"ERROR::SDL::{sdl2.SDL_GetError()}")
-
-        self.camera = Vec3(0, 0, -5)
 
     def clear_color_buffer(self, color):
         self.color_buffer.fill(color)
@@ -145,7 +144,7 @@ class Renderer:
         p1 = perspective_divide(triangle.vertices[1].position)
         p2 = perspective_divide(triangle.vertices[2].position)
 
-        # Flytta till skärmkoordinater (t.ex. mitt på skärmen)
+        # Flytta till skärmkoordinater
         half_width = self.window.window_width // 2
         half_height = self.window.window_height // 2
 
@@ -206,11 +205,14 @@ class Renderer:
             self.fill_triangle(v1, split_point, v2, color)
 
     # Själva render loopen:
-    def render(self):
-        # Den här koden behöves för alla render operationer och ska inte ändras:
+    def render(self, camera_pos: Vec3, camera_rotation: Vec3):
+        # Rensar varje pixel:
         self.clear_color_buffer(0xFF000000)
+        # Kameran:
         # Skapa view-matrisen (kameran)
-        view_matrix = Mat4.translation(-self.camera.x, -self.camera.y, -self.camera.z)
+        forward = Camera.get_forward_vector(camera_rotation)
+        target = camera_pos + forward
+        view_matrix = Mat4.look_at(camera_pos, target, Vec3(0, 1, 0))
         # Ljusinställningar:
         min_brightness = 0.5
 
@@ -219,23 +221,33 @@ class Renderer:
         # Render kod:
         # Ladda upp varje objekt som ska renderas:
         cube1 = Mesh.create_cube_mesh(center=Vec3(0, 0, 0.5), size=1, color=0xFFFF0000)
+        cube2 = Mesh.create_cube_mesh(center=Vec3(0, 0, 0.5), size=1, color=0xFF0F0FF0)
 
         # Skapa en model matris för varje objekt:
         model_matrix1 = (
                 Mat4.translation(0, 0, -2)
         )
+        model_matrix2 = (
+                Mat4.translation(0, 0, 6)
+        )
 
         # Skapa ett View * Model matrix:
         model_view_matrix1 = view_matrix * model_matrix1
+        model_view_matrix2 = view_matrix * model_matrix2
 
-        # Ge varje objekt en ny positon utifrån model view:
+        print(f"{camera_pos}")
+
+        # Ge varje objekt en ny position utifrån model view:
         transformed_mesh1 = cube1.transform(model_view_matrix1)
+        transformed_mesh2 = cube2.transform(model_view_matrix2)
 
-        # Lägg till alla objekt till den här listan så att de målas:
-        scene_meshes = [transformed_mesh1]
+        # Lista över alla objekt som ska målas:
+        scene_meshes = [transformed_mesh1, transformed_mesh2]
 
-        # Ljus:
-        world_light_dir = Vec3(0, -1, 0).normalize()
+        # Koden här under sköter sig själv och behöver inte manuellt ändras på:
+
+        # Ljus: -----------------------------------
+        world_light_dir = Vec3(0, 1, 0).normalize()
         view_rotation = Mat4.identity()
         for i in range(3):
             for j in range(3):
@@ -258,9 +270,9 @@ class Renderer:
                 edge1 = v1 - v0
                 edge2 = v2 - v0
                 normal = edge1.cross(edge2).normalize()
-                view_vector = (v0 - self.camera).normalize()
-                if normal.dot(view_vector) > 0:
-                    continue
+                #view_vector = (v0 - camera_pos).normalize()
+                #if normal.dot(view_vector) < 0:
+                #    continue
 
                 intensity = max(normal.dot(light_dir), min_brightness)
                 original_color = tri.color

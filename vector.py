@@ -1,5 +1,4 @@
 import math
-
 # INFO:
 # Följande fil innehåller alla vektor operationer projektet kräver för att fungera som det ska.
 # Anledningen till att jag skrev upp det här själv var för att göra projekt mer komplett och fritt från bibliotek som
@@ -122,6 +121,3 @@ class Vec4:
 
     def __str__(self):
         return f"({self.x}, {self.y}, {self.z}, {self.w})"
-
-def dot(self, other):
-    return self.x * other.x + self.y * other.y + self.z * other.z

@@ -1,5 +1,7 @@
 import math
 
+from vector import *
+
 class Mat4:
     def __init__(self, rows=None):
         if rows:
@@ -88,3 +90,28 @@ class Mat4:
             for j in range(4):
                 result.m[i][j] = self.m[j][i]
         return result
+
+    # Följande funktion vänder hela världen när kameran flyttar bakom ett objekt annars hade allt blivit spegelvänt
+    @staticmethod
+    def look_at(eye, target, up):
+        forward = (target - eye).normalize()
+        right = forward.cross(up).normalize()
+        true_up = right.cross(forward).normalize()
+
+        m = Mat4.identity()
+        m.m[0][0] = -right.x
+        m.m[0][1] = -right.y
+        m.m[0][2] = -right.z
+
+        m.m[1][0] = true_up.x
+        m.m[1][1] = -true_up.y
+        m.m[1][2] = true_up.z
+
+        m.m[2][0] = -forward.x
+        m.m[2][1] = -forward.y
+        m.m[2][2] = -forward.z
+
+        m.m[0][3] = right.dot(eye)
+        m.m[1][3] = -true_up.dot(eye)
+        m.m[2][3] = forward.dot(eye)
+        return m
