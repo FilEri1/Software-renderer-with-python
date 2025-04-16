@@ -88,7 +88,11 @@ class Renderer:
         dy = y1 - y0
 
         # Bestämmer antalet steg som kräves för hela linjen
-        steps = abs(dx) if abs(dx) > abs(dy) else abs(dy)
+        steps = max(abs(dx), abs(dy))
+
+        if steps == 0:
+            self.set_pixel(x0, y0, color)
+            return
 
         x_increment = float(dx / steps)
         y_increment = float(dy / steps)
@@ -172,7 +176,7 @@ class Renderer:
             x_left, x_right = v0.x, v1.x
 
             for y in range(int(v0.y), int(v2.y) + 1):
-                self.bresenham(int(x_left), y, int(x_right), y, color)
+                self.bresenham(round(x_left), y, round(x_right), y, color)
                 x_left += dx_left
                 x_right += dx_right
 
@@ -186,12 +190,15 @@ class Renderer:
             x_left, x_right = v0.x, v0.x
 
             for y in range(int(v0.y), int(v1.y) + 1):
-                self.bresenham(int(x_left), y, int(x_right), y, color)
+                self.bresenham(round(x_left), y, round(x_right), y, color)
                 x_left += dx_left
                 x_right += dx_right
 
         else:
-            t = (v1.y - v0.y) / (v2.y - v0.y)
+            denominator = v2.y - v0.y
+            if abs(denominator) < 1e-6:
+                return
+            t = (v1.y - v0.y) / denominator
             split_x = v0.x + t * (v2.x - v0.x)
             split_point = Vec3(split_x, v1.y, 0)
 
@@ -200,179 +207,94 @@ class Renderer:
 
     # Själva render loopen:
     def render(self):
-        # Exempel på enkelt perspektiv:
-        self.rotation += 0.005
-
-        self.camera.x = math.sin(self.rotation)
-
-        # Kamera matrisen kallas också view matrix
-        view_matrix = Mat4.translation(-self.camera.x, -self.camera.y, -self.camera.z)
-
+        # Den här koden behöves för alla render operationer och ska inte ändras:
         self.clear_color_buffer(0xFF000000)
-        #y_values = np.linspace(-1, 1, num=9)
-        #x_values = np.linspace(-1, 1, num=9)
-        #z_values = np.linspace(-1, 1, num=9)
-        #for y in y_values:
-        #    for x in x_values:
-        #        for z in z_values:
-        #            world_x = x
-        #            world_y = y
-        #            world_z = z - 3 # - 3 = Camera
-        #            point = Vec3(float(world_x), float(world_y), float(world_z))
-        #            projected_point = perspective_divide(point)
-        #            self.draw_rectangle(
-        #                int(projected_point.x + self.window.window_width//2),
-        #                int(projected_point.y + self.window.window_height//2),
-        #                4,
-        #                4,
-        #                0xFF00FFFF
-        #            )
+        # Skapa view-matrisen (kameran)
+        view_matrix = Mat4.translation(-self.camera.x, -self.camera.y, -self.camera.z)
+        # Ljusinställningar:
+        min_brightness = 0.5
 
-        # 2D rektangel:
-        #self.draw_rectangle(cube_vertices[0].position.x, cube_vertices[0].position.y, 10, 10, 0xFFFF0000)
-        #self.draw_rectangle(cube_vertices[1].position.x, cube_vertices[1].position.y, 10, 10, 0xFFFF0000)
-        #self.draw_rectangle(cube_vertices[2].position.x, cube_vertices[2].position.y, 10, 10, 0xFFFF0000)
-        #self.draw_rectangle(cube_vertices[3].position.x, cube_vertices[3].position.y, 10, 10, 0xFFFF0000)
+        self.rotation += 0.005 # Test
 
-        cube_vertices = [
-            Vertex(Vec3(-0.5, -0.5, 0.5)),
-            Vertex(Vec3(0.5, -0.5, 0.5)),
-            Vertex(Vec3(-0.5, 0.5, 0.5)),
-            Vertex(Vec3(0.5, 0.5, 0.5)),
-            Vertex(Vec3(-0.5, -0.5, -0.5)),
-            Vertex(Vec3(0.5, -0.5, -0.5)),
-            Vertex(Vec3(-0.5, 0.5, -0.5)),
-            Vertex(Vec3(0.5, 0.5, -0.5))
-        ]
+        # Render kod:
+        # Ladda upp varje objekt som ska renderas:
+        cube1 = Mesh.create_cube_mesh(center=Vec3(0, 0, 0.5), size=1, color=0xFFFF0000)
 
-        t = [
-            # Front yta
-            Triangle(cube_vertices[0], cube_vertices[1], cube_vertices[2], 0xFFFF0000),
-            Triangle(cube_vertices[1], cube_vertices[3], cube_vertices[2], 0xFFFF0000),
-
-            # Bak yta
-            Triangle(cube_vertices[4], cube_vertices[6], cube_vertices[5], 0xFF00FF00),
-            Triangle(cube_vertices[5], cube_vertices[6], cube_vertices[7], 0xFF00FF00),
-
-            # Vänster yta
-            Triangle(cube_vertices[0], cube_vertices[2], cube_vertices[4], 0xFF0000FF),
-            Triangle(cube_vertices[2], cube_vertices[6], cube_vertices[4], 0xFF0000FF),
-
-            # Höger yta
-            Triangle(cube_vertices[1], cube_vertices[5], cube_vertices[3], 0xFF0F0F0F),
-            Triangle(cube_vertices[3], cube_vertices[5], cube_vertices[7], 0xFF0F0F0F),
-
-            # Övre yta
-            Triangle(cube_vertices[2], cube_vertices[3], cube_vertices[6], 0xFFF0F0F0),
-            Triangle(cube_vertices[3], cube_vertices[7], cube_vertices[6], 0xFFF0F0F0),
-
-            # Nedre yta
-            Triangle(cube_vertices[0], cube_vertices[4], cube_vertices[1], 0xFFFFFFFF),
-            Triangle(cube_vertices[1], cube_vertices[4], cube_vertices[5], 0xFFFFFFFF)
-        ]
-
-        model_matrix = (
-                Mat4.translation(0, 0, -2) *
-                Mat4.rotation_z(self.rotation) *
-                Mat4.rotation_y(self.rotation) *
-                Mat4.rotation_x(self.rotation)
+        # Skapa en model matris för varje objekt:
+        model_matrix1 = (
+                Mat4.translation(0, 0, -2)
         )
 
-        model_view_matrix = view_matrix * model_matrix
+        # Skapa ett View * Model matrix:
+        model_view_matrix1 = view_matrix * model_matrix1
 
-        transformed_triangles = []
+        # Ge varje objekt en ny positon utifrån model view:
+        transformed_mesh1 = cube1.transform(model_view_matrix1)
 
-        for triangle in t:
-            transformed_vertices = []
-            for vertex in triangle.vertices:
-                pos = [vertex.position.x, vertex.position.y, vertex.position.z, 1.0]
-                transformed_pos = model_view_matrix * pos
-                transformed_vertices.append(Vertex(Vec3(*transformed_pos[:3])))
+        # Lägg till alla objekt till den här listan så att de målas:
+        scene_meshes = [transformed_mesh1]
 
-            transformed_triangles.append(Triangle(*transformed_vertices, triangle.color))
-
-        # Sortera trianglar baserat på medel-z bak och fram då vi vill måla det översta lagret inte understa
-        transformed_triangles.sort(key=lambda tri: -tri.avg_z())
-
-        # Ljus inställningar:
-        min_brightness = 0.7
-
+        # Ljus:
         world_light_dir = Vec3(0, -1, 0).normalize()
-
-        # Gör om ljusets riktning till våran 3D värld
         view_rotation = Mat4.identity()
         for i in range(3):
             for j in range(3):
                 view_rotation.m[i][j] = view_matrix.m[i][j]
 
-        # Matte för att justera ljuset till våran 3D värld istället för att var en enkel vektor:
         view_rotation_inv = view_rotation.transpose()
+        light_dir_vec = (view_rotation_inv * [world_light_dir.x, world_light_dir.y, world_light_dir.z, 0])[:3]
+        light_dir = Vec3(*light_dir_vec).normalize()
+        # ------------------------------------------
 
-        light_dir = (view_rotation_inv * [world_light_dir.x, world_light_dir.y, world_light_dir.z, 0])[:3]
-        light_dir = Vec3(*light_dir).normalize()
+        # Den här for loopen går igenom alla objekt i våran scenen och beräknar deras ljus, gör backface culling och
+        # ritar till slut ut dom.
+        for mesh in scene_meshes:
+            mesh.triangles.sort(key=lambda tri: -tri.avg_z())
+            for tri in mesh.triangles:
+                v0 = tri.vertices[0].position
+                v1 = tri.vertices[1].position
+                v2 = tri.vertices[2].position
 
-        for triangle in transformed_triangles:
-            v0 = triangle.vertices[0].position
-            v1 = triangle.vertices[1].position
-            v2 = triangle.vertices[2].position
+                edge1 = v1 - v0
+                edge2 = v2 - v0
+                normal = edge1.cross(edge2).normalize()
+                view_vector = (v0 - self.camera).normalize()
+                if normal.dot(view_vector) > 0:
+                    continue
 
-            if v0.z <= 0 and v1.z <= 0 and v2.z <= 0:
-                continue
+                intensity = max(normal.dot(light_dir), min_brightness)
+                original_color = tri.color
+                a = (original_color >> 24) & 0xFF
+                r = (original_color >> 16) & 0xFF
+                g = (original_color >> 8) & 0xFF
+                b = original_color & 0xFF
+                r_adj = int(r * intensity)
+                g_adj = int(g * intensity)
+                b_adj = int(b * intensity)
+                adjusted_color = (a << 24) | (r_adj << 16) | (g_adj << 8) | b_adj
+                proj_v0 = perspective_divide(v0)
+                proj_v1 = perspective_divide(v1)
+                proj_v2 = perspective_divide(v2)
+                half_width = self.window.window_width // 2
+                half_height = self.window.window_height // 2
+                screen_v0 = Vec2(proj_v0.x + half_width, proj_v0.y + half_height)
+                screen_v1 = Vec2(proj_v1.x + half_width, proj_v1.y + half_height)
+                screen_v2 = Vec2(proj_v2.x + half_width, proj_v2.y + half_height)
+                min_x = min(screen_v0.x, screen_v1.x, screen_v2.x)
+                max_x = max(screen_v0.x, screen_v1.x, screen_v2.x)
+                min_y = min(screen_v0.y, screen_v1.y, screen_v2.y)
+                max_y = max(screen_v0.y, screen_v1.y, screen_v2.y)
 
-            edge1 = v1 - v0
-            edge2 = v2 - v0
+                if max_x < 0 or min_x >= self.window.window_width or max_y < 0 or min_y >= self.window.window_height:
+                    continue
 
-            normal = edge1.cross(edge2).normalize()
+                # Rita triangeln
+                self.fill_triangle(screen_v0, screen_v1, screen_v2, adjusted_color)
 
-            if normal.z >= 0:
-                continue
-
-            intensity = max(normal.dot(light_dir), min_brightness)
-
-            original_color = triangle.color
-            a = (original_color >> 24) & 0xFF
-            r = (original_color >> 16) & 0xFF
-            g = (original_color >> 8) & 0xFF
-            b = original_color & 0xFF
-
-            r_adj = int(r * intensity)
-            g_adj = int(g * intensity)
-            b_adj = int(b * intensity)
-
-            adjusted_color = (a << 24) | (r_adj << 16) | (g_adj << 8) | b_adj
-
-            proj_v0 = perspective_divide(v0)
-            proj_v1 = perspective_divide(v1)
-            proj_v2 = perspective_divide(v2)
-
-            half_width = self.window.window_width // 2
-            half_height = self.window.window_height // 2
-            screen_v0 = Vec2(proj_v0.x + half_width, proj_v0.y + half_height)
-            screen_v1 = Vec2(proj_v1.x + half_width, proj_v1.y + half_height)
-            screen_v2 = Vec2(proj_v2.x + half_width, proj_v2.y + half_height)
-
-            min_x = min(screen_v0.x, screen_v1.x, screen_v2.x)
-            max_x = max(screen_v0.x, screen_v1.x, screen_v2.x)
-            min_y = min(screen_v0.y, screen_v1.y, screen_v2.y)
-            max_y = max(screen_v0.y, screen_v1.y, screen_v2.y)
-
-            window_width = self.window.window_width
-            window_height = self.window.window_height
-
-            if (max_x < 0 or min_x >= window_width or
-                    max_y < 0 or min_y >= window_height):
-                continue  # Hoppa över triangeln om den är helt utanför skärmen
-
-            # Ritar triangeln om den är synlig eller lite synlig men inte om den ej syns!
-            # Detta är viktigt för att förhindra krascher genom att försöka måla utanför fönstret samt förbättrar prest-
-            # andan genom att hoppa över onödiga målningar vilket är det mest prestanda krävande i programmet.
-            # I ett riktigt grafik bibliotek så hade vi bara målat själva pixlarna innanför våra NDC normal device
-            # coordinates vilket även hade målat delar av objektet som syns trots att kanske halva triangeln inte är
-            # synlig så hade resten blivit målad.
-            self.fill_triangle(screen_v0, screen_v1, screen_v2, adjusted_color)
-
+        # Visar resultatet av alla operationer, ändra inte!:
         self.present()
 
+    # Tar bort allt som tillhör rendern när vi är klara
     def __del__(self):
         sdl2.SDL_DestroyRenderer(self.sdl_renderer)
         sdl2.SDL_DestroyTexture(self.buffer_texture)
