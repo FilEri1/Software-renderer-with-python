@@ -104,3 +104,20 @@ class Mesh:
         ]
 
         return Mesh([v0, v1, v2, v3], triangles)
+
+    @staticmethod
+    def create_plane_mesh(center=Vec3(0, 0, 0), width=1.0, depth=1.0, color=0x00FF00FF):
+        hw = width / 2.0
+        hd = depth / 2.0
+
+        v0 = Vertex(Vec3(center.x - hw, center.y, center.z - hd))
+        v1 = Vertex(Vec3(center.x + hw, center.y, center.z - hd))
+        v2 = Vertex(Vec3(center.x - hw, center.y, center.z + hd))
+        v3 = Vertex(Vec3(center.x + hw, center.y, center.z + hd))
+
+        triangles = [
+            Triangle(v0, v1, v2, color),
+            Triangle(v2, v1, v3, color)
+        ]
+
+        return Mesh([v0, v1, v2, v3], triangles)

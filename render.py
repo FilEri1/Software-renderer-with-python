@@ -1,5 +1,6 @@
 import ctypes
 import math
+from numba import njit
 
 import sdl2
 import numpy as np
@@ -10,6 +11,61 @@ from vector import *
 from graphics import *
 from matrix import *
 from camera import *
+from player import *
+
+
+@njit
+def draw_scanline_numba(buffer, x0, x1, y, color):
+    if x0 > x1:
+        x0, x1 = x1, x0
+    for x in range(x0, x1 + 1):
+        if 0 <= x < buffer.shape[1] and 0 <= y < buffer.shape[0]:
+            buffer[y, x] = color
+
+@njit
+def fill_triangle_numba(buffer, width, height, x0, y0, x1, y1, x2, y2, color):
+    # Sortera så att y0 <= y1 <= y2
+    if y0 > y1:
+        x0, y0, x1, y1 = x1, y1, x0, y0
+    if y0 > y2:
+        x0, y0, x2, y2 = x2, y2, x0, y0
+    if y1 > y2:
+        x1, y1, x2, y2 = x2, y2, x1, y1
+
+    def edge_interpolate(y_start, y_end, x_start, x_end):
+        if y_end == y_start:
+            return np.empty(0, dtype=np.float32)
+        num_steps = int(y_end) - int(y_start)
+        slope = (x_end - x_start) / (y_end - y_start)
+        return np.array([x_start + slope * (y - y_start) for y in range(int(y_start), int(y_end))], dtype=np.float32)
+
+    x01 = edge_interpolate(y0, y1, x0, x1)
+    x12 = edge_interpolate(y1, y2, x1, x2)
+    x02 = edge_interpolate(y0, y2, x0, x2)
+
+    x012 = np.concatenate((x01, x12)).astype(np.float32)
+
+    y_start = int(y0)
+    y_end = int(y2)
+
+    if len(x02) != (y_end - y_start):
+        return
+
+    for i in range(y_end - y_start):
+        y = y_start + i
+        if y < 0 or y >= height:
+            continue
+
+        xa = x02[i]
+        xb = x012[i] if i < len(x012) else x012[-1]
+
+        x_start = int(min(xa, xb))
+        x_end = int(max(xa, xb))
+
+        for x in range(x_start, x_end + 1):
+            if 0 <= x < width:
+                buffer[y, x] = color
+
 
 class Renderer:
     def __init__(self, window: Window):
@@ -23,7 +79,12 @@ class Renderer:
 
             raise RuntimeError(f"ERROR::SDL::{sdl2.SDL_GetError()}")
 
-        self.rotation = 0 # TEMP
+        # Spelaren:
+        self.player_mesh = None
+
+        # Gräset:
+        self.grass_meshes = []
+        self.grass_model_matrices = []
 
         # NP använder höjd och bredd inte tvärt om av någon anledning, tydligen är def för att Matriser använder (y, x)?
         self.color_buffer = np.zeros((self.window.window_height, self.window.window_width), dtype=np.uint32) # Vi använder uint32 för att få hexadecimaler för ARGB
@@ -157,55 +218,81 @@ class Renderer:
         self.bresenham(x1, y1, x2, y2, color)
         self.bresenham(x2, y2, x0, y0, color)
 
-    def fill_triangle(self, v0: Vec3, v1: Vec3, v2: Vec3, color):
-        # Sorterar punkterna beroende på y värdet eller höjden för att avgöra vilken typ av triangel vi arbetar med
+    def fill_triangle(self, v0: Vec2, v1: Vec2, v2: Vec2, color):
+        # Sortera efter y så att v0.y mindre än v1.y och mindre än v2.y
         vertices = sorted([v0, v1, v2], key=lambda v: v.y)
         v0, v1, v2 = vertices
 
-        if abs(v0.y - v2.y) < 0.0001:
+        def edge_interpolate(y_start, y_end, x_start, x_end):
+            if y_end - y_start == 0:
+                return []
+            slope = (x_end - x_start) / (y_end - y_start)
+            return [x_start + slope * (y - y_start) for y in range(int(y_start), int(y_end))]
+
+        x01 = edge_interpolate(v0.y, v1.y, v0.x, v1.x)
+        x12 = edge_interpolate(v1.y, v2.y, v1.x, v2.x)
+        x02 = edge_interpolate(v0.y, v2.y, v0.x, v2.x)
+
+        x012 = x01 + x12
+
+        y_start = int(v0.y)
+        y_end = int(v2.y)
+        if y_end - y_start == 0:
             return
 
-        if abs(v0.y - v1.y) < 0.0001:
-            self.bresenham(int(v0.x), int(v0.y), int(v1.x), int(v1.y), color)
+        midpoint = int(v1.y)
+        if len(x02) != (y_end - y_start):
+            return
 
-            dy = v2.y - v0.y
-            if dy == 0: return
-            dx_left = (v2.x - v0.x) / dy
-            dx_right = (v2.x - v1.x) / dy
-            x_left, x_right = v0.x, v1.x
+        for i in range(y_end - y_start):
+            y = y_start + i
+            if y < 0 or y >= self.window.window_height:
+                continue
 
-            for y in range(int(v0.y), int(v2.y) + 1):
-                self.bresenham(round(x_left), y, round(x_right), y, color)
-                x_left += dx_left
-                x_right += dx_right
+            xa = x02[i]
+            xb = x012[i] if i < len(x012) else x012[-1]  # undvik index error
 
-        elif abs(v1.y - v2.y) < 0.0001:
-            self.bresenham(int(v1.x), int(v1.y), int(v2.x), int(v2.y), color)
+            draw_scanline_numba(self.color_buffer, int(xa), int(xb), y, color)
 
-            dy = v1.y - v0.y
-            if dy == 0: return
-            dx_left = (v1.x - v0.x) / dy
-            dx_right = (v2.x - v0.x) / dy
-            x_left, x_right = v0.x, v0.x
+    def render_start(self):
+        # Spelaren:
+        self.player_mesh = Mesh.create_cube_mesh(center=Vec3(0, 0, 0.5), size=1, color=0xFFFF0FFF)
+        # Gräset:
+        light_green = 0xFF32CD32
+        dark_green = 0xFF006400
 
-            for y in range(int(v0.y), int(v1.y) + 1):
-                self.bresenham(round(x_left), y, round(x_right), y, color)
-                x_left += dx_left
-                x_right += dx_right
+        grass_positions_z = [0, 30, 60]
+        grass_positions_x = [-119.7, -113.4, -107.1, -100.8, -94.5, -88.2, -81.9, -75.6, -69.3, -63, -56.7, -50.4,
+                             -44.1, -37.8, -31.5, -25.2, -18.9, -12.6,
+                             -6.3, 0, 6.3, 12.6, 18.9, 25.2, 31.5, 37.8, 44.1, 50.4, 56.7, 63, 69.3, 75.6, 81.9, 88.2,
+                             94.5, 100.8, 107.1, 113.4, 119.7]
+        grass_width = 12.5
+        grass_depth = [30, 30, 60]
 
-        else:
-            denominator = v2.y - v0.y
-            if abs(denominator) < 1e-6:
-                return
-            t = (v1.y - v0.y) / denominator
-            split_x = v0.x + t * (v2.x - v0.x)
-            split_point = Vec3(split_x, v1.y, 0)
+        self.grass_meshes = []
+        self.grass_model_matrices = []
 
-            self.fill_triangle(v0, v1, split_point, color)
-            self.fill_triangle(v1, split_point, v2, color)
+        for z_index, z_position in enumerate(grass_positions_z):
+            for x_index, x_position in enumerate(grass_positions_x):
+                # Väljer färg:
+                if (x_index + z_index) % 2 == 0:
+                    color = dark_green
+                else:
+                    color = light_green
+
+                mesh = Mesh.create_plane_mesh(
+                    center=Vec3(0, -2, 10),
+                    width=grass_width,
+                    depth=grass_depth[z_index],
+                    color=color
+                )
+                model_matrix = Mat4.translation(x_position, 0, z_position)
+
+                self.grass_meshes.append(mesh)
+                self.grass_model_matrices.append(model_matrix)
 
     # Själva render loopen:
-    def render(self, camera_pos: Vec3, camera_rotation: Vec3):
+    def render(self, camera_pos: Vec3, camera_rotation: Vec3, player):
         # Rensar varje pixel:
         self.clear_color_buffer(0xFF000000)
         # Kameran:
@@ -216,38 +303,26 @@ class Renderer:
         # Ljusinställningar:
         min_brightness = 0.5
 
-        self.rotation += 0.005 # Test
-
         # Render kod:
         # Ladda upp varje objekt som ska renderas:
-        cube1 = Mesh.create_cube_mesh(center=Vec3(0, 0, 0.5), size=1, color=0xFFFF0000)
-        cube2 = Mesh.create_cube_mesh(center=Vec3(0, 0, 0.5), size=1, color=0xFF0F0FF0)
+        # Spelar meshen:
+        player_model_view = player.model * view_matrix
+        player_transformed_mesh = self.player_mesh.transform(player_model_view)
+        # --------------
 
-        # Skapa en model matris för varje objekt:
-        model_matrix1 = (
-                Mat4.translation(0, 0, -2)
-        )
-        model_matrix2 = (
-                Mat4.translation(0, 0, 6)
-        )
+        # Gräset:
+        transformed_grass_meshes = []
 
-        # Skapa ett View * Model matrix:
-        model_view_matrix1 = view_matrix * model_matrix1
-        model_view_matrix2 = view_matrix * model_matrix2
+        for mesh, model_matrix in zip(self.grass_meshes, self.grass_model_matrices):
+            model_view_matrix = view_matrix * model_matrix
+            transformed_grass = mesh.transform(model_view_matrix)
+            transformed_grass_meshes.append(transformed_grass)
 
-        print(f"{camera_pos}")
-
-        # Ge varje objekt en ny position utifrån model view:
-        transformed_mesh1 = cube1.transform(model_view_matrix1)
-        transformed_mesh2 = cube2.transform(model_view_matrix2)
-
-        # Lista över alla objekt som ska målas:
-        scene_meshes = [transformed_mesh1, transformed_mesh2]
+        scene_meshes = transformed_grass_meshes + [player_transformed_mesh]
 
         # Koden här under sköter sig själv och behöver inte manuellt ändras på:
-
         # Ljus: -----------------------------------
-        world_light_dir = Vec3(0, 1, 0).normalize()
+        world_light_dir = Vec3(0, -1, 0).normalize()
         view_rotation = Mat4.identity()
         for i in range(3):
             for j in range(3):
@@ -259,7 +334,7 @@ class Renderer:
         # ------------------------------------------
 
         # Den här for loopen går igenom alla objekt i våran scenen och beräknar deras ljus, gör backface culling och
-        # ritar till slut ut dom.
+        # ritar till slut ut dom för varje mesh->triangel.
         for mesh in scene_meshes:
             mesh.triangles.sort(key=lambda tri: -tri.avg_z())
             for tri in mesh.triangles:
@@ -270,9 +345,10 @@ class Renderer:
                 edge1 = v1 - v0
                 edge2 = v2 - v0
                 normal = edge1.cross(edge2).normalize()
-                #view_vector = (v0 - camera_pos).normalize()
-                #if normal.dot(view_vector) < 0:
-                #    continue
+                view_vector = (v0 - camera_pos).normalize()
+
+                if normal.dot(view_vector) > 0:
+                    continue
 
                 intensity = max(normal.dot(light_dir), min_brightness)
                 original_color = tri.color
@@ -301,7 +377,17 @@ class Renderer:
                     continue
 
                 # Rita triangeln
-                self.fill_triangle(screen_v0, screen_v1, screen_v2, adjusted_color)
+                #self.fill_triangle(screen_v0, screen_v1, screen_v2, adjusted_color)
+                # Använd Numba istället, testa gamla methoden och se skillnaden!:
+                fill_triangle_numba(
+                    self.color_buffer,
+                    self.window.window_width,
+                    self.window.window_height,
+                    screen_v0.x, screen_v0.y,
+                    screen_v1.x, screen_v1.y,
+                    screen_v2.x, screen_v2.y,
+                    adjusted_color
+                )
 
         # Visar resultatet av alla operationer, ändra inte!:
         self.present()

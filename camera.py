@@ -10,6 +10,15 @@ class Camera:
 
         self.camera = Vec3()
 
+        # Följ spelaren variabler:
+        self.fixed_position = self.position
+        self.target_position = Vec3()
+
+        self.last_player_position_x = 0
+
+        self.last_player_position_x = 0.0
+        self.current_look_ahead = 0.0
+
     def update_camera(self, keys, delta_time):
         forward = Camera.get_forward_vector(self.rotation)
         right = Vec3(0, 1, 0).cross(forward).normalize()
@@ -37,7 +46,47 @@ class Camera:
         yaw_rad = math.radians(camera_rotation.y)
         pitch_rad = math.radians(camera_rotation.x)
         return Vec3(
-            -math.sin(yaw_rad) * math.cos(pitch_rad),  # -x for right
+            -math.sin(yaw_rad) * math.cos(pitch_rad),
             math.sin(pitch_rad),
-            -math.cos(yaw_rad) * math.cos(pitch_rad)  # -z for forward
+            -math.cos(yaw_rad) * math.cos(pitch_rad)
         ).normalize()
+
+    def follow_player(self, player_position: Vec3, player_rotation: Vec3, delta_time):
+        inverted_x = -player_position.x
+
+        dx = player_position.x - self.last_player_position_x
+
+        threshold = 0.01
+        target_look = 0.0
+        if dx > threshold:
+            target_look = 2.0
+        elif dx < -threshold:
+            target_look = -2.0
+        else:
+            target_look = 0.0
+
+        look_smoothing = 0.005
+        center_smoothing = 0.0009
+
+        current_smoothing = look_smoothing if target_look != 0.0 else center_smoothing
+
+        self.current_look_ahead += (target_look - self.current_look_ahead) * current_smoothing * delta_time
+
+        target_x = inverted_x + self.current_look_ahead
+
+        self.target_position = Vec3(
+            target_x,
+            player_position.y + 1,
+            self.fixed_position.z
+        )
+
+        smoothing = 0.005
+        self.position = self.position.lerp(
+            self.target_position,
+            smoothing * delta_time
+        )
+        self.position.z = self.fixed_position.z
+
+        self.last_player_position_x = player_position.x
+
+        return self.position

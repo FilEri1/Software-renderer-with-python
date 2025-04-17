@@ -9,6 +9,7 @@ from render import  *
 from window import *
 
 from camera import *
+from player import *
 
 class App:
     def __init__(self, window_width, window_height):
@@ -19,7 +20,10 @@ class App:
         self.target_delta = 1000 // 60
 
         # Kamera:
-        self.camera = Camera(Vec3(0, 0, 10), Vec3(0, 0,0 ))
+        self.camera = Camera(Vec3(0, 50, 105), Vec3(0, 0,0 ))
+        self.player = Player(0.0035, Vec3(0, 50, 100))
+
+        self.renderer.render_start()
 
     def run(self):
         while self.running:
@@ -33,14 +37,18 @@ class App:
             #---------------------------------------------------
 
             # Render: ------------------------------------------
-            self.renderer.render(self.camera.position, self.camera.rotation)
+            self.renderer.render(self.camera.position, self.camera.rotation, self.player)
             # --------------------------------------------------
 
             # Update: ------------------------------------------
             if delta_time >= self.target_delta:
                 self.last_time = current_time
 
-                self.camera.update_camera(player_keys, delta_time)
+                self.player.player_update(player_keys, delta_time)
+                self.camera.follow_player(self.player.position, self.player.rotation, delta_time)
+
+                # Om vi vill testa kameran använd den här raden och kommentera ut player update raden!
+                #self.camera.update_camera(player_keys, delta_time)
 
             # --------------------------------------------------
 

@@ -68,6 +68,11 @@ class Vec3:
             self.x * other.y - self.y * other.x
         )
 
+    def length(self):
+        length = math.sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
+
+        return length
+
     # Används för att skriva ut själva vektorn och inte dess minnes address!
     def __str__(self):
         return f"({self.x}, {self.y}, {self.z})"
@@ -92,6 +97,16 @@ class Vec3:
         self.x = old_x * math.cos(angle) + old_z * math.sin(angle)
         self.z = -old_x * math.sin(angle) + old_z * math.cos(angle)
 
+    # Lerp:
+    # Används för att interpolera eller gå med en finnare och mjukare transaktion mellan punkt a och punkt b
+    def lerp(self, target, t):
+        return Vec3(
+            self.x * (1 - t) + target.x * t,
+            self.y * (1 - t) + target.y * t,
+            self.z * (1 - t) + target.z * t
+        )
+
+# Används aldrig genom hela programmet men är bra att ha!
 class Vec4:
     def __init__(self, x: float = 0, y: float = 0, z: float = 0, w: float = 0):
         self.x = x
