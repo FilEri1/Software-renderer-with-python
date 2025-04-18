@@ -66,7 +66,6 @@ def fill_triangle_numba(buffer, width, height, x0, y0, x1, y1, x2, y2, color):
             if 0 <= x < width:
                 buffer[y, x] = color
 
-
 class Renderer:
     def __init__(self, window: Window):
         self.window = window
@@ -81,10 +80,6 @@ class Renderer:
 
         # Spelaren:
         self.player_mesh = None
-
-        # Gräset:
-        self.grass_meshes = []
-        self.grass_model_matrices = []
 
         # NP använder höjd och bredd inte tvärt om av någon anledning, tydligen är def för att Matriser använder (y, x)?
         self.color_buffer = np.zeros((self.window.window_height, self.window.window_width), dtype=np.uint32) # Vi använder uint32 för att få hexadecimaler för ARGB
@@ -254,47 +249,33 @@ class Renderer:
 
             draw_scanline_numba(self.color_buffer, int(xa), int(xb), y, color)
 
+    def clear_color_buffer_gradient(self, top_color, bottom_color):
+        h, w = self.color_buffer.shape
+        for y in range(h):
+            t = y / (h - 1)
+            a = int((1 - t) * ((top_color >> 24) & 0xFF) + t * ((bottom_color >> 24) & 0xFF))
+            r = int((1 - t) * ((top_color >> 16) & 0xFF) + t * ((bottom_color >> 16) & 0xFF))
+            g = int((1 - t) * ((top_color >> 8) & 0xFF) + t * ((bottom_color >> 8) & 0xFF))
+            b = int((1 - t) * (top_color & 0xFF) + t * (bottom_color & 0xFF))
+            color = (a << 24) | (r << 16) | (g << 8) | b
+            self.color_buffer[y, :] = color
+
     def render_start(self):
         # Spelaren:
-        self.player_mesh = Mesh.create_cube_mesh(center=Vec3(0, 0, 0.5), size=1, color=0xFFFF0FFF)
+        # self.player_mesh = Mesh.create_cube_mesh(center=Vec3(0, 0, 0.5), size=1, color=0xFFFF0FFF)
         # Gräset:
-        light_green = 0xFF32CD32
-        dark_green = 0xFF006400
-
-        grass_positions_z = [0, 30, 60]
-        grass_positions_x = [-119.7, -113.4, -107.1, -100.8, -94.5, -88.2, -81.9, -75.6, -69.3, -63, -56.7, -50.4,
-                             -44.1, -37.8, -31.5, -25.2, -18.9, -12.6,
-                             -6.3, 0, 6.3, 12.6, 18.9, 25.2, 31.5, 37.8, 44.1, 50.4, 56.7, 63, 69.3, 75.6, 81.9, 88.2,
-                             94.5, 100.8, 107.1, 113.4, 119.7]
-        grass_width = 12.5
-        grass_depth = [30, 30, 60]
-
-        self.grass_meshes = []
-        self.grass_model_matrices = []
-
-        for z_index, z_position in enumerate(grass_positions_z):
-            for x_index, x_position in enumerate(grass_positions_x):
-                # Väljer färg:
-                if (x_index + z_index) % 2 == 0:
-                    color = dark_green
-                else:
-                    color = light_green
-
-                mesh = Mesh.create_plane_mesh(
-                    center=Vec3(0, -2, 10),
-                    width=grass_width,
-                    depth=grass_depth[z_index],
-                    color=color
-                )
-                model_matrix = Mat4.translation(x_position, 0, z_position)
-
-                self.grass_meshes.append(mesh)
-                self.grass_model_matrices.append(model_matrix)
-
+        self.grass_mesh = Mesh.create_plane_mesh(Vec3(0, 0, 0), 1000, 15, 0xFF305F33)
+        self.grass_mesh2 = Mesh.create_plane_mesh(Vec3(0, 0, 0), 1000, 15, 0xFF36753B)
+        self.grass_mesh3 = Mesh.create_plane_mesh(Vec3(0, 0, 0), 1000, 15, 0xFF3C7B40)
+        self.grass_mesh4 = Mesh.create_plane_mesh(Vec3(0, 0, 0), 1000, 15, 0xFF438245)
+        self.grass_mesh5 = Mesh.create_plane_mesh(Vec3(0, 0, 0), 1000, 15, 0xFF3F7A39)
+        self.grass_mesh6 = Mesh.create_plane_mesh(Vec3(0, 0, 0), 1000, 15, 0xFF376F32)
+        self.grass_mesh7 = Mesh.create_plane_mesh(Vec3(0, 0, 0), 1000, 15, 0xFF30632A)
+        self.grass_mesh8 = Mesh.create_plane_mesh(Vec3(0, 0, 0), 1000, 15, 0xFF30632A)
     # Själva render loopen:
-    def render(self, camera_pos: Vec3, camera_rotation: Vec3, player):
+    def render(self, camera_pos: Vec3, camera_rotation: Vec3, player, rings):
         # Rensar varje pixel:
-        self.clear_color_buffer(0xFF000000)
+        self.clear_color_buffer_gradient(0xFF3A83D4, 0xFF0B2D5A)
         # Kameran:
         # Skapa view-matrisen (kameran)
         forward = Camera.get_forward_vector(camera_rotation)
@@ -305,20 +286,85 @@ class Renderer:
 
         # Render kod:
         # Ladda upp varje objekt som ska renderas:
-        # Spelar meshen:
-        player_model_view = player.model * view_matrix
-        player_transformed_mesh = self.player_mesh.transform(player_model_view)
-        # --------------
-
         # Gräset:
-        transformed_grass_meshes = []
+        grass_x = player.position.x
 
-        for mesh, model_matrix in zip(self.grass_meshes, self.grass_model_matrices):
-            model_view_matrix = view_matrix * model_matrix
-            transformed_grass = mesh.transform(model_view_matrix)
-            transformed_grass_meshes.append(transformed_grass)
+        grass_model = Mat4.identity()
+        grass_model = grass_model.translation(grass_x, 0, 0)
+        grass_view_model = grass_model * view_matrix
+        grass_transformed_mesh = self.grass_mesh.transform(grass_view_model)
 
-        scene_meshes = transformed_grass_meshes + [player_transformed_mesh]
+        grass_model2 = Mat4.identity()
+        grass_model2 = grass_model2.translation(grass_x, 0, 15)
+        grass_view_model2 = grass_model2 * view_matrix
+        grass_transformed_mesh2 = self.grass_mesh2.transform(grass_view_model2)
+
+        grass_model3 = Mat4.identity()
+        grass_model3 = grass_model3.translation(grass_x, 0, 30)
+        grass_view_model3 = grass_model3 * view_matrix
+        grass_transformed_mesh3 = self.grass_mesh3.transform(grass_view_model3)
+
+        grass_model4 = Mat4.identity()
+        grass_model4 = grass_model4.translation(grass_x, 0, 45)
+        grass_view_model4 = grass_model4 * view_matrix
+        grass_transformed_mesh4 = self.grass_mesh4.transform(grass_view_model4)
+
+        grass_model5 = Mat4.identity()
+        grass_model5 = grass_model5.translation(grass_x, 0, 60)
+        grass_view_model5 = grass_model5 * view_matrix
+        grass_transformed_mesh5 = self.grass_mesh5.transform(grass_view_model5)
+
+        grass_model6 = Mat4.identity()
+        grass_model6 = grass_model6.translation(grass_x, 0, 75)
+        grass_view_model6 = grass_model6 * view_matrix
+        grass_transformed_mesh6 = self.grass_mesh6.transform(grass_view_model6)
+
+        grass_model7 = Mat4.identity()
+        grass_model7 = grass_model7.translation(grass_x, 0, 90)
+        grass_view_model7 = (grass_model7 * view_matrix)
+        grass_transformed_mesh7 = self.grass_mesh7.transform(grass_view_model7)
+
+        grass_model8 = Mat4.identity()
+        grass_model8 = grass_model8.translation(grass_x, 0, -15)
+        grass_view_model8 = (grass_model8 * view_matrix)
+        grass_transformed_mesh8 = self.grass_mesh8.transform(grass_view_model8)
+
+        scene_meshes = [
+            grass_transformed_mesh,
+            grass_transformed_mesh2,
+            grass_transformed_mesh3,
+            grass_transformed_mesh4,
+            grass_transformed_mesh5,
+            grass_transformed_mesh6,
+            grass_transformed_mesh7,
+            grass_transformed_mesh8,
+        ]
+
+        # Ringarna:
+        if rings:
+            first_ring = max(rings, key=lambda r: r.position.z)
+
+            for ring in rings:
+                if ring == first_ring:
+                    ring_color = 0xFFFCF403
+                else:
+                    ring_color = 0xFFFF0000
+
+                ring_mesh = Mesh.create_static_torus_mesh(Vec3(), major_radius=2.5, minor_radius=0.4, color=ring_color)
+
+                model = Mat4.identity()
+                model = model.translation(ring.position.x, ring.position.y, ring.position.z)
+                ring_model_view = model * view_matrix
+                ring_transformed_mesh = ring_mesh.transform(ring_model_view)
+                scene_meshes.append(ring_transformed_mesh)
+
+        # Spelaren:
+        base_view_model = player.model * view_matrix
+
+        for mesh, local_mat in player.parts:
+            model_view = base_view_model * local_mat
+            scene_meshes.append(mesh.transform(model_view))
+
 
         # Koden här under sköter sig själv och behöver inte manuellt ändras på:
         # Ljus: -----------------------------------

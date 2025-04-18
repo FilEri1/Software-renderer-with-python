@@ -121,3 +121,123 @@ class Mesh:
         ]
 
         return Mesh([v0, v1, v2, v3], triangles)
+
+    @staticmethod
+    def create_double_pyramid_mesh(center=Vec3(0, 0, 0), height=1.0, size=1.0, color=0xFFFFFF00):
+        hs = size / 2.0
+
+        v0 = Vertex(Vec3(center.x - hs, center.y, center.z - hs))
+        v1 = Vertex(Vec3(center.x + hs, center.y, center.z - hs))
+        v2 = Vertex(Vec3(center.x + hs, center.y, center.z + hs))
+        v3 = Vertex(Vec3(center.x - hs, center.y, center.z + hs))
+
+        top = Vertex(Vec3(center.x, center.y + height, center.z))
+        bottom = Vertex(Vec3(center.x, center.y - height, center.z))
+
+        vertices = [v0, v1, v2, v3, top, bottom]
+
+        triangles = [
+            Triangle(v0, v1, top, color),
+            Triangle(v1, v2, top, color),
+            Triangle(v2, v3, top, color),
+            Triangle(v3, v0, top, color),
+
+            Triangle(v1, v0, bottom, color),
+            Triangle(v2, v1, bottom, color),
+            Triangle(v3, v2, bottom, color),
+            Triangle(v0, v3, bottom, color),
+        ]
+
+        return Mesh(vertices, triangles)
+
+    @staticmethod
+    def create_horizontal_double_pyramid_mesh(center=Vec3(0, 0, 0), height=1.0, size=1.0, color=0xFFFFFF00):
+        hs = size / 2.0
+
+        # Fyrkantens hörn i XY-planet
+        v0 = Vertex(Vec3(center.x - hs, center.y - hs, center.z))
+        v1 = Vertex(Vec3(center.x + hs, center.y - hs, center.z))
+        v2 = Vertex(Vec3(center.x + hs, center.y + hs, center.z))
+        v3 = Vertex(Vec3(center.x - hs, center.y + hs, center.z))
+
+        # Pyramid-topparna i +Z (front) och -Z (bak)
+        front = Vertex(Vec3(center.x, center.y, center.z + height))
+        back = Vertex(Vec3(center.x, center.y, center.z - height))
+
+        vertices = [v0, v1, v2, v3, front, back]
+
+        triangles = [
+            # Främre pyramid
+            Triangle(v0, v1, front, color),
+            Triangle(v1, v2, front, color),
+            Triangle(v2, v3, front, color),
+            Triangle(v3, v0, front, color),
+
+            # Bakre pyramid
+            Triangle(v1, v0, back, color),
+            Triangle(v2, v1, back, color),
+            Triangle(v3, v2, back, color),
+            Triangle(v0, v3, back, color),
+        ]
+
+        return Mesh(vertices, triangles)
+
+    @staticmethod
+    def create_static_torus_mesh(center=Vec3(0, 0, 0), major_radius=1.5, minor_radius=0.4, color=0xFFFFAA00):
+        major_segments = 8
+        minor_segments = 6
+
+        vertices = []
+        triangles = []
+
+        for i in range(major_segments):
+            theta = (i / major_segments) * 2 * math.pi
+            next_theta = ((i + 1) % major_segments) / major_segments * 2 * math.pi
+
+            for j in range(minor_segments):
+                phi = (j / minor_segments) * 2 * math.pi
+                next_phi = ((j + 1) % minor_segments) / minor_segments * 2 * math.pi
+
+                def point(t, p):
+                    cx = math.cos(t)
+                    cy = math.sin(t)
+
+                    r = major_radius
+                    x = (r + minor_radius * math.cos(p)) * cx
+                    y = (r + minor_radius * math.cos(p)) * cy
+                    z = minor_radius * math.sin(p)
+                    return Vertex(Vec3(center.x + x, center.y + y, center.z + z))
+
+                v0 = point(theta, phi)
+                v1 = point(next_theta, phi)
+                v2 = point(next_theta, next_phi)
+                v3 = point(theta, next_phi)
+
+                idx_base = len(vertices)
+                vertices.extend([v0, v1, v2, v3])
+
+                triangles.append(Triangle(vertices[idx_base], vertices[idx_base + 1], vertices[idx_base + 2], color))
+                triangles.append(Triangle(vertices[idx_base], vertices[idx_base + 2], vertices[idx_base + 3], color))
+
+        return Mesh(vertices, triangles)
+
+    @staticmethod
+    def create_tetrahedron_mesh_length_think(center=Vec3(0, 0, 0), length=1.0, thickness=1.0, color=0xFF00FFFF):
+        hs = length / 2.0
+        sqrt2over3 = math.sqrt(2) / 3 * thickness
+        height = math.sqrt(6) / 3 * thickness
+
+        # Hörn
+        v0 = Vertex(Vec3(center.x, center.y + 2 * sqrt2over3, center.z - height / 3))
+        v1 = Vertex(Vec3(center.x - hs, center.y - sqrt2over3, center.z - height / 3))
+        v2 = Vertex(Vec3(center.x + hs, center.y - sqrt2over3, center.z - height / 3))
+        v3 = Vertex(Vec3(center.x, center.y, center.z + 2 * height / 3))
+
+        triangles = [
+            Triangle(v0, v1, v2, color),
+            Triangle(v0, v1, v3, color),
+            Triangle(v1, v2, v3, color),
+            Triangle(v2, v0, v3, color),
+        ]
+
+        return Mesh([v0, v1, v2, v3], triangles)
