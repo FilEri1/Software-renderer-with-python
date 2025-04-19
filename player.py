@@ -9,6 +9,7 @@ class Player:
         self.position = position
         self.rotation = rotation
         self.player_speed = player_speed
+        self.player_health = 100
 
         self.model = Mat4.identity()
         self.model = self.model.translation(self.position.x, self.position.y, self.position.z)
@@ -73,6 +74,13 @@ class Player:
             (self.body_mesh, self.body_mat)
         ]
 
+        # Projektil:
+        self.projectile_mesh = Mesh.create_tetrahedron_mesh_length_think(Vec3(), 2.0, 0.5,
+                                                                         0xFF0000FF)
+        self.projectiles = []
+        self.shoot_timer = 0
+        self.shoot_cooldown = 100
+
     def player_update(self, keys, delta_time):
         direction = Vec3()
         self.target_tilt = Vec3()
@@ -90,24 +98,65 @@ class Player:
             direction += Vec3(-1, 0, 0)
             self.target_tilt.z = 15
 
+        if self.shoot_timer <= 0:
+            if keys[4]:  # Space
+                projectile_position = Vec3(self.position.x, self.position.y, self.position.z + 8)
+
+                projectile_dir = Vec3(
+                    math.sin(math.radians(self.rotation.z) / 2),
+                    math.sin(math.radians(self.rotation.x)),
+                    -math.cos(math.radians(self.rotation.z))
+                ).normalize()
+
+                projectile_speed = 1
+
+                projectile_data = {
+                    "position": projectile_position,
+                    "direction": projectile_dir,
+                    "speed": projectile_speed,
+                    "model": Mat4.translation(projectile_position.x, projectile_position.y, projectile_position.z)
+                }
+
+                self.projectiles.append(projectile_data)
+
+                self.shoot_timer = self.shoot_cooldown
+
+        else:
+            self.shoot_timer -= delta_time
+
         if direction.length() > 0:
             direction = direction.normalize()
             move_amount = direction * self.player_speed * delta_time
             self.target_pos += move_amount
 
-        # Y clamp hindrar spelaren från att åka igenom marken:
-        if self.target_pos.y < 5:
-            self.target_pos.y = 5
+        if self.target_pos.y < 7:
+            self.target_pos.y = 7
 
         lerp_speed = 0.007
         self.position = self.position.lerp(self.target_pos, lerp_speed * delta_time)
         self.tilt = self.tilt.lerp(self.target_tilt, lerp_speed * delta_time)
         self.rotation = self.rotation.lerp(self.tilt, lerp_speed * delta_time)
 
-        # Uppdaterar model matrisen:
         rotation_x = Mat4.rotation_x(math.radians(self.rotation.x))
         rotation_z = Mat4.rotation_z(math.radians(self.rotation.z))
 
         translation = Mat4.translation(self.position.x, self.position.y, self.position.z)
 
         self.model = rotation_z * rotation_x * translation
+
+        updated_projectiles = []
+        if self.projectiles:
+            for proj in self.projectiles:
+                proj['position'] += proj['direction'] * proj['speed'] * delta_time
+                proj['model'] = Mat4.translation(proj['position'].x, proj['position'].y, proj['position'].z)
+
+                if proj['position'].z > -100:
+                    updated_projectiles.append(proj)
+            self.projectiles = updated_projectiles
+
+    def get_projectiles(self):
+        return [proj['position'] for proj in self.projectiles]
+
+    def remove_projectile_at_index(self, idx: int):
+        if 0 <= idx < len(self.projectiles):
+            self.projectiles.pop(idx)

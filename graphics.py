@@ -85,6 +85,95 @@ class Mesh:
         return Mesh(vertices, triangles)
 
     @staticmethod
+    def create_box_mesh(center, width, height, depth, color):
+        hw = width / 2.0  # half width
+        hh = height / 2.0  # half height
+        hd = depth / 2.0  # half depth
+
+        vertices = [
+            # Front face
+            Vertex(Vec3(center.x - hw, center.y - hh, center.z + hd)),
+            Vertex(Vec3(center.x + hw, center.y - hh, center.z + hd)),
+            Vertex(Vec3(center.x - hw, center.y + hh, center.z + hd)),
+            Vertex(Vec3(center.x + hw, center.y + hh, center.z + hd)),
+
+            # Back face
+            Vertex(Vec3(center.x - hw, center.y - hh, center.z - hd)),
+            Vertex(Vec3(center.x + hw, center.y - hh, center.z - hd)),
+            Vertex(Vec3(center.x - hw, center.y + hh, center.z - hd)),
+            Vertex(Vec3(center.x + hw, center.y + hh, center.z - hd)),
+        ]
+
+        triangles = [
+            # Front
+            Triangle(vertices[0], vertices[1], vertices[2], color),
+            Triangle(vertices[1], vertices[3], vertices[2], color),
+
+            # Back
+            Triangle(vertices[4], vertices[6], vertices[5], color),
+            Triangle(vertices[5], vertices[6], vertices[7], color),
+
+            # Left
+            Triangle(vertices[0], vertices[2], vertices[4], color),
+            Triangle(vertices[2], vertices[6], vertices[4], color),
+
+            # Right
+            Triangle(vertices[1], vertices[5], vertices[3], color),
+            Triangle(vertices[3], vertices[5], vertices[7], color),
+
+            # Top
+            Triangle(vertices[2], vertices[3], vertices[6], color),
+            Triangle(vertices[3], vertices[7], vertices[6], color),
+
+            # Bottom
+            Triangle(vertices[0], vertices[4], vertices[1], color),
+            Triangle(vertices[1], vertices[4], vertices[5], color)
+        ]
+
+        return Mesh(vertices, triangles)
+
+    @staticmethod
+    def create_cylinder_mesh(center=Vec3(0, 0, 0), radius=1.0, height=1.0, color=0xFFFFFFFF):
+        segments = 12
+        half_h = height / 2.0
+        vertices = []
+        triangles = []
+        # 1) Sidor: två trianglar per segment
+        for i in range(segments):
+            theta = 2 * math.pi * (i) / segments
+            next_th = 2 * math.pi * (i + 1) / segments
+            x0, z0 = math.cos(theta) * radius, math.sin(theta) * radius
+            x1, z1 = math.cos(next_th) * radius, math.sin(next_th) * radius
+            # Hörn på botten
+            v0 = Vertex(Vec3(center.x + x0, center.y - half_h, center.z + z0))
+            v1 = Vertex(Vec3(center.x + x1, center.y - half_h, center.z + z1))
+            # Motsvarande hörn på toppen
+            v2 = Vertex(Vec3(center.x + x0, center.y + half_h, center.z + z0))
+            v3 = Vertex(Vec3(center.x + x1, center.y + half_h, center.z + z1))
+            # Spara vertices
+            vertices.extend([v0, v1, v2, v3])
+            # Två trianglar för denna “väggbit”
+            triangles.append(Triangle(v0, v1, v2, color))
+            triangles.append(Triangle(v2, v1, v3, color))
+        # 2) Locken
+        # Topplockets mittpunkt
+        top_center = Vertex(Vec3(center.x, center.y + half_h, center.z))
+        bottom_center = Vertex(Vec3(center.x, center.y - half_h, center.z))
+        vertices.extend([top_center, bottom_center])
+        # Trianglar ut mot kanten för varje segment
+        for i in range(segments):
+            # index i*4+2 och +3 är de två “övre” hörnen för segment i
+            v_top_a = vertices[i * 4 + 2]
+            v_top_b = vertices[((i + 1) % segments) * 4 + 2]
+            triangles.append(Triangle(top_center, v_top_a, v_top_b, color))
+            # index i*4+0 och +1 är de två “nedre” hörnen för segment i
+            v_bot_a = vertices[i * 4 + 0]
+            v_bot_b = vertices[((i + 1) % segments) * 4 + 0]
+            # vänd ordningen så caps face:ar nedåt
+            triangles.append(Triangle(bottom_center, v_bot_b, v_bot_a, color))
+        return Mesh(vertices, triangles)
+
+    @staticmethod
     def create_tetrahedron_mesh(center=Vec3(0, 0, 0), size=1.0, color=0xFF00FFFF):
         hs = size / 2.0
         sqrt2over3 = math.sqrt(2) / 3 * size

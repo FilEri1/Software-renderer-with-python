@@ -3,7 +3,7 @@ import random
 from vector import *
 
 class Ring:
-    def __init__(self, player, existing_rings):
+    def __init__(self, player, existing_rings, existing_buildings):
         ring_start_pos = Vec3()
 
         self.player = player
@@ -13,30 +13,35 @@ class Ring:
         self.spawn_attempts = 5
 
         self.existing_rings = existing_rings
-        self.position = self.gen_position(existing_rings)
+        self.existing_buildings = existing_buildings
+        self.position = self.gen_position(existing_rings, existing_buildings)
 
-        self.radius = 2
+        self.speed = 0
 
-    def gen_position(self, existing_rings):
-        for i in range(self.spawn_attempts):
+        self.radius = 3
+
+    def gen_position(self, existing_rings, existing_buildings):
+        for _ in range(self.spawn_attempts):
             pos = self.rand_position_near_player()
 
-            if all((pos - ring.position).length() >= self.min_distance for ring in existing_rings):
+            no_close_rings = all((pos - ring.position).length() >= self.min_distance for ring in existing_rings)
+            no_building_conflict = all(abs(pos.x - building.x) > 20 for building in existing_buildings)
+
+            if no_close_rings and no_building_conflict:
                 return pos
 
         return self.rand_position_near_player()
 
-
     def rand_position_near_player(self):
         spread_x = 10
         spread_y = 10
-        min_y = 5
-        max_z = 25
-        min_z = -10
+        min_y = 7
+        max_z = 0
+        min_z = -20
 
         if self.existing_rings:
             base_pos = self.existing_rings[-1].position
-            z_pos = base_pos.z + random.uniform((base_pos.z - 80), (base_pos.z - 30))
+            z_pos = base_pos.z + random.uniform(-80, -30)
             y_pos = base_pos.y + random.uniform((base_pos.y - spread_y), (base_pos.y + spread_y))
         else:
             base_pos = self.player.position
@@ -61,3 +66,8 @@ class Ring:
 
         if d_x * d_x + d_y * d_y <= self.radius * self.radius:
             player.score += 1
+            if player.player_health < 100:
+                player.player_health += 10
+        else:
+            if player.player_health > 0:
+                player.player_health -= 10

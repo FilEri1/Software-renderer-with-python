@@ -12,6 +12,7 @@ from graphics import *
 from matrix import *
 from camera import *
 from player import *
+from building import *
 
 
 @njit
@@ -24,47 +25,26 @@ def draw_scanline_numba(buffer, x0, x1, y, color):
 
 @njit
 def fill_triangle_numba(buffer, width, height, x0, y0, x1, y1, x2, y2, color):
-    # Sortera så att y0 <= y1 <= y2
-    if y0 > y1:
-        x0, y0, x1, y1 = x1, y1, x0, y0
-    if y0 > y2:
-        x0, y0, x2, y2 = x2, y2, x0, y0
-    if y1 > y2:
-        x1, y1, x2, y2 = x2, y2, x1, y1
+    # beräkna axis‑allignerat bounding box
+    min_x = max(min(x0, x1, x2), 0)
+    max_x = min(max(x0, x1, x2), width - 1)
+    min_y = max(min(y0, y1, y2), 0)
+    max_y = min(max(y0, y1, y2), height - 1)
 
-    def edge_interpolate(y_start, y_end, x_start, x_end):
-        if y_end == y_start:
-            return np.empty(0, dtype=np.float32)
-        num_steps = int(y_end) - int(y_start)
-        slope = (x_end - x_start) / (y_end - y_start)
-        return np.array([x_start + slope * (y - y_start) for y in range(int(y_start), int(y_end))], dtype=np.float32)
-
-    x01 = edge_interpolate(y0, y1, x0, x1)
-    x12 = edge_interpolate(y1, y2, x1, x2)
-    x02 = edge_interpolate(y0, y2, x0, x2)
-
-    x012 = np.concatenate((x01, x12)).astype(np.float32)
-
-    y_start = int(y0)
-    y_end = int(y2)
-
-    if len(x02) != (y_end - y_start):
+    # area för barycentriska
+    area = (y1 - y2)*(x0 - x2) + (x2 - x1)*(y0 - y2)
+    if area == 0:
         return
 
-    for i in range(y_end - y_start):
-        y = y_start + i
-        if y < 0 or y >= height:
-            continue
+    # för varje pixel i rutan, testa om den ligger i triangel
+    for py in range(int(min_y), int(max_y) + 1):
+        for px in range(int(min_x), int(max_x) + 1):
+            w0 = ((y1 - y2)*(px - x2) + (x2 - x1)*(py - y2)) / area
+            w1 = ((y2 - y0)*(px - x2) + (x0 - x2)*(py - y2)) / area
+            w2 = 1.0 - w0 - w1
+            if w0 >= 0 and w1 >= 0 and w2 >= 0:
+                buffer[py, px] = color
 
-        xa = x02[i]
-        xb = x012[i] if i < len(x012) else x012[-1]
-
-        x_start = int(min(xa, xb))
-        x_end = int(max(xa, xb))
-
-        for x in range(x_start, x_end + 1):
-            if 0 <= x < width:
-                buffer[y, x] = color
 
 class Renderer:
     def __init__(self, window: Window):
@@ -93,10 +73,56 @@ class Renderer:
         if not self.buffer_texture:
             raise RuntimeError(f"ERROR::SDL::{sdl2.SDL_GetError()}")
 
+        self._init_starry_field(
+            num_stars=300,
+            min_brightness=0.5,
+            max_brightness=1.0,
+            speed_frames=6
+        )
+
     def clear_color_buffer(self, color):
         self.color_buffer.fill(color)
 
-    # Kopierar texturen och presenterar sedan den till skärmen så att vi ser det vi vill måla:
+    def clear_color_buffer_gradient(self, top_color, bottom_color):
+        h, w = self.color_buffer.shape
+        for y in range(h):
+            t = y / (h - 1)
+            a = int((1 - t) * ((top_color >> 24) & 0xFF) + t * ((bottom_color >> 24) & 0xFF))
+            r = int((1 - t) * ((top_color >> 16) & 0xFF) + t * ((bottom_color >> 16) & 0xFF))
+            g = int((1 - t) * ((top_color >> 8) & 0xFF) + t * ((bottom_color >> 8) & 0xFF))
+            b = int((1 - t) * (top_color & 0xFF) + t * (bottom_color & 0xFF))
+            color = (a << 24) | (r << 16) | (g << 8) | b
+            self.color_buffer[y, :] = color
+
+    def _init_starry_field(self, num_stars: int, min_brightness: float, max_brightness: float, speed_frames: int):
+        h, w = self.window.window_height, self.window.window_width
+        self.star_field = [
+            {
+                "x": random.randrange(w),
+                "y": random.randrange(h),
+                "b": random.uniform(min_brightness, max_brightness)
+            }
+            for _ in range(num_stars)
+        ]
+
+        self._star_offset = 0
+        self._star_frame_count = 0
+        self._star_speed_frames = speed_frames
+        self._star_screen_width = w
+
+    def clear_color_buffer_starry(self, top_color: int, bottom_color: int):
+        self.clear_color_buffer_gradient(top_color, bottom_color)
+        self._star_frame_count += 1
+        if self._star_frame_count >= self._star_speed_frames:
+            self._star_frame_count = 0
+            self._star_offset = (self._star_offset + 1) % self._star_screen_width
+        for star in self.star_field:
+            x = (star["x"] + self._star_offset) % self._star_screen_width
+            y = star["y"]
+            a = int(255 * star["b"])
+            color = (a << 24) | 0x00FFFFFF
+            self.color_buffer[y, x] = color
+
     def present(self):
         self.update_color_buffer()
         sdl2.SDL_RenderClear(self.sdl_renderer)
@@ -249,20 +275,178 @@ class Renderer:
 
             draw_scanline_numba(self.color_buffer, int(xa), int(xb), y, color)
 
-    def clear_color_buffer_gradient(self, top_color, bottom_color):
-        h, w = self.color_buffer.shape
-        for y in range(h):
-            t = y / (h - 1)
-            a = int((1 - t) * ((top_color >> 24) & 0xFF) + t * ((bottom_color >> 24) & 0xFF))
-            r = int((1 - t) * ((top_color >> 16) & 0xFF) + t * ((bottom_color >> 16) & 0xFF))
-            g = int((1 - t) * ((top_color >> 8) & 0xFF) + t * ((bottom_color >> 8) & 0xFF))
-            b = int((1 - t) * (top_color & 0xFF) + t * (bottom_color & 0xFF))
-            color = (a << 24) | (r << 16) | (g << 8) | b
-            self.color_buffer[y, :] = color
+    # GUI:
+    SEG_THICK = 4
+    MARGIN = -4
+    WIDTH = 16
+    HEIGHT = 30
+    H_LEN = WIDTH - 2 * MARGIN
+    V_LEN = (HEIGHT - 3 * MARGIN - SEG_THICK) // 2
+    SEGMENTS = {
+        0: ["A", "B", "C", "D", "E", "F"],
+        1: ["B", "C"],
+        2: ["A", "B", "G", "E", "D"],
+        3: ["A", "B", "G", "C", "D"],
+        4: ["F", "G", "B", "C"],
+        5: ["A", "F", "G", "C", "D"],
+        6: ["A", "F", "G", "C", "D", "E"],
+        7: ["A", "B", "C"],
+        8: ["A", "B", "C", "D", "E", "F", "G"],
+        9: ["A", "B", "C", "D", "F", "G"],
+    }
+    def _draw_segment(self, seg: str, sx: int, sy: int, color: int):
+        if seg == "A":
+            for y in range(self.MARGIN, self.MARGIN + self.SEG_THICK):
+                for x in range(self.MARGIN, self.MARGIN + self.H_LEN):
+                    self.set_pixel(sx + x, sy + y, color)
+        elif seg == "G":
+            y0 = self.MARGIN + self.V_LEN + self.SEG_THICK + self.MARGIN
+            for y in range(y0, y0 + self.SEG_THICK):
+                for x in range(self.MARGIN, self.MARGIN + self.H_LEN):
+                    self.set_pixel(sx + x, sy + y, color)
+        elif seg == "D":
+            y0 = self.HEIGHT - self.MARGIN - self.SEG_THICK
+            for y in range(y0, y0 + self.SEG_THICK):
+                for x in range(self.MARGIN, self.MARGIN + self.H_LEN):
+                    self.set_pixel(sx + x, sy + y, color)
+        elif seg == "F":
+            for x in range(self.MARGIN, self.MARGIN + self.SEG_THICK):
+                for y in range(self.MARGIN, self.MARGIN + self.V_LEN):
+                    self.set_pixel(sx + x, sy + y, color)
+        elif seg == "E":
+            y0 = self.MARGIN + self.V_LEN + self.SEG_THICK + self.MARGIN
+            for x in range(self.MARGIN, self.MARGIN + self.SEG_THICK):
+                for y in range(y0, y0 + self.V_LEN):
+                    self.set_pixel(sx + x, sy + y, color)
+        elif seg == "B":
+            x0 = self.WIDTH - self.MARGIN - self.SEG_THICK
+            for x in range(x0, x0 + self.SEG_THICK):
+                for y in range(self.MARGIN, self.MARGIN + self.V_LEN):
+                    self.set_pixel(sx + x, sy + y, color)
+        elif seg == "C":
+            x0 = self.WIDTH - self.MARGIN - self.SEG_THICK
+            y0 = self.MARGIN + self.V_LEN + self.SEG_THICK + self.MARGIN
+            for x in range(x0, x0 + self.SEG_THICK):
+                for y in range(y0, y0 + self.V_LEN):
+                    self.set_pixel(sx + x, sy + y, color)
+
+    def gui_draw_digit(self, digit: int, screen_x: int, screen_y: int, color: int):
+        offset_y = screen_y
+        self.set_pixel
+        for seg in self.SEGMENTS.get(digit, []):
+            self._draw_segment(seg, screen_x, offset_y, color)
+
+    def render_gui(self, player_score: int, player_health: int, player):
+        # GUI:
+        digit_space = self.WIDTH + 30
+        score_str = str(player_score)
+
+        for i, char in enumerate(score_str):
+            digit = int(char)
+            x = self.window.window_width//2 + digit_space//2 - self.WIDTH + i * digit_space
+            self.gui_draw_digit(digit, x, 100, 0xFF00FFFF)
+
+        player_health_str = str(player_health)
+        if player_health <= 50:
+            player_health_color = 0xFFFF8B2E
+        if player_health<= 30:
+            player_health_color = 0xFFEE0000
+        else:
+            player_health_color = 0xFF45FF00
+
+        if player_health != 0:
+            for i, char in enumerate(player_health_str):
+                digit = int(char)
+                x = 50 + digit_space // 2 - self.WIDTH + i * digit_space
+                self.gui_draw_digit(digit, x, self.window.window_height - 100, player_health_color)
+
+        # Crosshair:
+        tilt_x = player.rotation.x
+        tilt_z = player.rotation.z
+        max_tilt = 30
+        max_offset_pixels = int(self.window.window_width//8)
+
+        offset = Vec2(
+            int((tilt_z / max_tilt) * max_offset_pixels),
+            int((tilt_x / max_tilt) * max_offset_pixels)
+        )
+
+        crosshair_pos = Vec2(
+            self.window.window_width//2 + offset.x,
+            self.window.window_width//2 - offset.y
+        )
+
+        #self.draw_rectangle(crosshair_pos.x, crosshair_pos.y, 10,
+                            #10, 0xFFFF0000)
+
+    def render_home_screen(self, unlocked: bool):
+        self.clear_color_buffer_starry(0xFF000000, 0xFF111111)
+
+        gui_color = 0xFFFFFFFF
+        box_length = 400
+        box_height = 75
+        offset = 10
+        box_y_distance = box_height + offset
+        #----------------#
+        # Första rutan:  #
+        #----------------#
+        # Horizontella linjerna:
+        for i in range (self.window.window_width//2 - box_length//2, self.window.window_width//2 + box_length//2, 1):
+            self.set_pixel(i, self.window.window_height//2, gui_color)
+
+        for i in range (self.window.window_width//2 - box_length//2, self.window.window_width//2 + box_length//2, 1):
+            self.set_pixel(i, self.window.window_height//2 + box_height, gui_color)
+        # Vertikala linjerna:
+        for i in range (0, box_height, 1):
+            self.set_pixel(self.window.window_width//2 - box_length//2, i + self.window.window_height//2, gui_color)
+
+        for i in range (0, box_height, 1):
+            self.set_pixel(self.window.window_width//2 + box_length//2, i + self.window.window_height//2, gui_color)
+
+        # Rutan:
+        self.draw_rectangle(self.window.window_width//2 - box_length//2, self.window.window_height//2,
+                            box_length, box_height, 0xFF00FF00)
+
+        # Siffran:
+        self.gui_draw_digit(1, self.window.window_width//2,
+                            self.window.window_height//2 + box_height//2 - offset, gui_color)
+
+        # ----------------#
+        # Andra rutan:    #
+        # ----------------#
+        # Horizontella linjerna:
+        for i in range (self.window.window_width//2 - box_length//2, self.window.window_width//2 + box_length//2, 1):
+            self.set_pixel(i, self.window.window_height//2 + box_y_distance, gui_color)
+
+        for i in range (self.window.window_width//2 - box_length//2, self.window.window_width//2 + box_length//2, 1):
+            self.set_pixel(i, self.window.window_height//2 + box_height + box_y_distance, gui_color)
+        # Vertikala linjerna:
+        for i in range (0, box_height, 1):
+            self.set_pixel(self.window.window_width//2 - box_length//2, i + self.window.window_height//2 +
+                           box_y_distance, gui_color)
+
+        for i in range (0, box_height, 1):
+            self.set_pixel(self.window.window_width//2 + box_length//2, i + self.window.window_height//2 +
+                           box_y_distance, gui_color)
+
+        if unlocked:
+            box_color = 0xFF00FF00
+        else:
+            box_color = 0xFFFF0000
+
+        # Rutan:
+        self.draw_rectangle(self.window.window_width//2 - box_length//2, self.window.window_height//2 + box_height +
+                            offset,
+                            box_length, box_height, box_color)
+
+        # Siffran:
+        self.gui_draw_digit(2, self.window.window_width//2 + offset,
+                            + self.window.window_height // 2 +
+                            box_y_distance + box_height//2 - offset, gui_color)
+
+        self.present()
 
     def render_start(self):
-        # Spelaren:
-        # self.player_mesh = Mesh.create_cube_mesh(center=Vec3(0, 0, 0.5), size=1, color=0xFFFF0FFF)
         # Gräset:
         self.grass_mesh = Mesh.create_plane_mesh(Vec3(0, 0, 0), 1000, 15, 0xFF305F33)
         self.grass_mesh2 = Mesh.create_plane_mesh(Vec3(0, 0, 0), 1000, 15, 0xFF36753B)
@@ -273,9 +457,9 @@ class Renderer:
         self.grass_mesh7 = Mesh.create_plane_mesh(Vec3(0, 0, 0), 1000, 15, 0xFF30632A)
         self.grass_mesh8 = Mesh.create_plane_mesh(Vec3(0, 0, 0), 1000, 15, 0xFF30632A)
     # Själva render loopen:
-    def render(self, camera_pos: Vec3, camera_rotation: Vec3, player, rings):
+    def render(self, camera_pos: Vec3, camera_rotation: Vec3, player, rings, buildings, targets):
         # Rensar varje pixel:
-        self.clear_color_buffer_gradient(0xFF3A83D4, 0xFF0B2D5A)
+        self.clear_color_buffer_starry(0xFF3A83D4, 0xFF0B2D5A)
         # Kameran:
         # Skapa view-matrisen (kameran)
         forward = Camera.get_forward_vector(camera_rotation)
@@ -340,31 +524,57 @@ class Renderer:
             grass_transformed_mesh8,
         ]
 
+        # Byggnaderna:
+        for b in buildings:
+            building_mesh = Mesh.create_box_mesh(Vec3(), 20, 80, 20, 0xFFAAAAAA)
+
+            building_model = Mat4.identity()
+            building_model = Mat4.translation(b.x, b.y, b.z)
+            building_model_view = building_model * view_matrix
+
+            transformed_building_mesh = building_mesh.transform(building_model_view)
+            scene_meshes.append(transformed_building_mesh)
+
         # Ringarna:
         if rings:
-            first_ring = max(rings, key=lambda r: r.position.z)
+            sorted_rings = sorted(rings, key=lambda r: r.position.z)
+            closest_ring = sorted_rings[-1]
 
-            for ring in rings:
-                if ring == first_ring:
+            for ring in sorted_rings:
+                if ring is closest_ring:
                     ring_color = 0xFFFCF403
                 else:
                     ring_color = 0xFFFF0000
 
-                ring_mesh = Mesh.create_static_torus_mesh(Vec3(), major_radius=2.5, minor_radius=0.4, color=ring_color)
-
-                model = Mat4.identity()
-                model = model.translation(ring.position.x, ring.position.y, ring.position.z)
+                ring_mesh = Mesh.create_static_torus_mesh(
+                    Vec3(), major_radius=2.5, minor_radius=0.4, color=ring_color
+                )
+                model = Mat4.identity().translation(
+                    ring.position.x, ring.position.y, ring.position.z
+                )
                 ring_model_view = model * view_matrix
-                ring_transformed_mesh = ring_mesh.transform(ring_model_view)
-                scene_meshes.append(ring_transformed_mesh)
+                scene_meshes.append(ring_mesh.transform(ring_model_view))
+
+        for tgt in targets:
+            tgt_model = Mat4.identity().translation(
+                tgt.position.x,
+                tgt.position.y,
+                tgt.position.z
+            )
+            tgt_model_view = tgt_model * view_matrix
+            scene_meshes.append(tgt.mesh.transform(tgt_model_view))
 
         # Spelaren:
         base_view_model = player.model * view_matrix
 
+        for proj in player.projectiles:
+            proj_model_view = proj['model'] * view_matrix
+            transformed_projectile = player.projectile_mesh.transform(proj_model_view)
+            scene_meshes.append(transformed_projectile)
+
         for mesh, local_mat in player.parts:
             model_view = base_view_model * local_mat
             scene_meshes.append(mesh.transform(model_view))
-
 
         # Koden här under sköter sig själv och behöver inte manuellt ändras på:
         # Ljus: -----------------------------------
@@ -378,7 +588,6 @@ class Renderer:
         light_dir_vec = (view_rotation_inv * [world_light_dir.x, world_light_dir.y, world_light_dir.z, 0])[:3]
         light_dir = Vec3(*light_dir_vec).normalize()
         # ------------------------------------------
-
         # Den här for loopen går igenom alla objekt i våran scenen och beräknar deras ljus, gör backface culling och
         # ritar till slut ut dom för varje mesh->triangel.
         for mesh in scene_meshes:
@@ -434,6 +643,8 @@ class Renderer:
                     screen_v2.x, screen_v2.y,
                     adjusted_color
                 )
+        # GUI:
+        self.render_gui(player.score, player.player_health, player)
 
         # Visar resultatet av alla operationer, ändra inte!:
         self.present()
